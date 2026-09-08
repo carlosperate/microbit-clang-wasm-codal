@@ -1,0 +1,129 @@
+name: Build & publish
+
+# Everything authored lives in package.json: the package's own version, the toolchain it depends on,
+# and `codal`, which names the build harness and what to put in its codal.json. Which ATfE release
+# to install is not authored here at all — it comes from the installed toolchain, which is the only
+# thing that knows what it was built from.
+
+on:
+  push:
+    branches: '**'
+    tags: 'v*'
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    # A pull request from a branch in this repository already ran on push.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.x'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Read the pins
+        id: pins
+        run: |
+          echo "repository=$(node -p 'require("./package.json").codal.buildSystem.repository')" >> "$GITHUB_OUTPUT"
+          echo "ref=$(node -p 'require("./package.json").codal.buildSystem.ref')" >> "$GITHUB_OUTPUT"
+          echo "atfe=$(node -p 'require("microbit-clang-wasm/package.json").llvm.version')" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$(node -p 'require("./package.json").version.includes("-")')" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the CODAL build harness at the pinned ref
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.pins.outputs.repository }}
+          ref: ${{ steps.pins.outputs.ref }}
+          path: samples
+
+      # The harness's own codal.json names a branch; package.json's codal.codalJson replaces that
+      # with the pinned release, so what gets built is what this package says it contains.
+      - name: Point the harness at the pinned CODAL
+        run: node tools/configure-harness.mjs samples
+
+      - name: Install ninja
+        run: python -m pip install ninja
+
+      # The release the installed toolchain was built from, checked against the sha256 Arm publishes:
+      # a different one would generate different code from the compiler this package ships with.
+      - name: Set up ATfE ${{ steps.pins.outputs.atfe }} with the newlib-nano overlay
+        working-directory: ${{ runner.temp }}
+        run: |
+          ATFE=${{ steps.pins.outputs.atfe }}
+          BASE_URL="https://github.com/arm/arm-toolchain/releases/download/release-${ATFE}-ATfE"
+          wget -q "${BASE_URL}/ATfE-${ATFE}-Linux-x86_64.tar.xz" \
+                  "${BASE_URL}/ATfE-${ATFE}-Linux-x86_64.tar.xz.sha256" \
+                  "${BASE_URL}/ATfE-newlib-nano-overlay-${ATFE}.tar.xz" \
+                  "${BASE_URL}/ATfE-newlib-nano-overlay-${ATFE}.tar.xz.sha256"
+          sha256sum -c "ATfE-${ATFE}-Linux-x86_64.tar.xz.sha256"
+          sha256sum -c "ATfE-newlib-nano-overlay-${ATFE}.tar.xz.sha256"
+          tar -xf "ATfE-${ATFE}-Linux-x86_64.tar.xz" -C "$HOME"
+          tar -xf "ATfE-newlib-nano-overlay-${ATFE}.tar.xz" -C "$HOME/ATfE-${ATFE}-Linux-x86_64"
+          echo "$HOME/ATfE-${ATFE}-Linux-x86_64/bin" >> "$GITHUB_PATH"
+          echo "ATFE_HOME=$HOME/ATfE-${ATFE}-Linux-x86_64" >> "$GITHUB_ENV"
+
+      - name: Build CODAL with the CLANG toolchain
+        working-directory: samples
+        run: CODAL_TOOLCHAIN=CLANG python build.py
+
+      # The hex step is not a named ninja target, so it has to be asked for by its output path.
+      - name: Capture the build's own command list
+        working-directory: samples
+        run: ninja -C build -t commands "$PWD/MICROBIT.hex" > ninja-commands.txt
+
+      # Also checks the version's encoded CODAL release against the one that was built.
+      - name: Generate the package
+        run: node tools/generate.mjs --samples samples --out .
+
+      # The sysroot the toolchain package ships, not one assembled here, so the native replay checks
+      # the same headers and libraries the WebAssembly compiler uses.
+      - name: Unpack the toolchain's sysroot for the native replay
+        run: tar xf node_modules/microbit-clang-wasm/gen/llvm-resources.tar usr
+
+      - name: Test
+        env:
+          MICROBIT_SAMPLES: ${{ github.workspace }}/samples
+          ATFE_SYSROOT: ${{ github.workspace }}/usr
+        run: npm test
+
+      - name: Pack
+        run: |
+          mkdir -p dist   # npm pack will not create its own destination
+          npm pack --pack-destination dist
+
+      # The version is authored in package.json, so a tag that names a different one is a lie about
+      # what was published.
+      - name: Check the version matches the tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: test "$(node -p 'require("./package.json").version')" = "${GITHUB_REF_NAME#v}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: package
+          path: dist/
+
+      # On every other run, so a metadata mistake surfaces long before the tag that publishes.
+      - name: Publish (dry run)
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        run: npm publish dist/*.tgz --provenance --access public --dry-run
+
+      # A prerelease goes under `next` so `latest` never points at one.
+      - name: Publish
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: npm publish dist/*.tgz --provenance --access public ${{ steps.pins.outputs.prerelease == 'true' && '--tag next' || '' }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,0 +1,43 @@
+This package ships several components under different licences.
+Every component's own notice travels with it, inside codal/payload.tar at the path given below.
+
+1. This package's own code: lib/, tools/, test/
+-----------------------------------------------
+MIT. Copyright (c) 2026 Carlos Pereira Atencio.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial
+portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+2. CODAL: codal-core, codal-nrf52, codal-microbit-v2
+----------------------------------------------------
+MIT, Lancaster University and the Micro:bit Educational Foundation. Sources, headers and the
+prebuilt archives built from them.
+
+    codal/libraries/codal-core/LICENSE
+    codal/libraries/codal-nrf52/LICENSE
+    codal/libraries/codal-microbit-v2/LICENSE
+
+3. Nordic Semiconductor: codal-microbit-nrf5sdk and the prebuilt binary objects
+------------------------------------------------------------------------------
+The nRF5 SDK sources, and the SoftDevice, MBR, bootloader, settings and UICR objects this package
+links (codal/libraries/codal-microbit-v2/lib/*.o), are Nordic Semiconductor's. Their licence permits
+use only with Nordic Semiconductor integrated circuits, which the BBC micro:bit V2 uses.
+
+    codal/libraries/codal-microbit-nrf5sdk/LICENCE.txt
+
+4. The compiler
+---------------
+Not in this package. It comes from microbit-clang-wasm, which carries its own LICENSES file
+covering LLVM, Arm Toolchain for Embedded's runtimes and the YoWASP packaging this is built on.

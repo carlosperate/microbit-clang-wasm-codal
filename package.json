@@ -1,0 +1,61 @@
+{
+    "name": "microbit-clang-wasm-codal",
+    "version": "0.305.0-alpha.1",
+    "description": "Compile BBC micro:bit C++ programs to a flashable hex in a browser or Node, with prebuilt CODAL and no toolchain to install",
+    "author": "Carlos Pereira Atencio",
+    "license": "SEE LICENSE IN LICENSES",
+    "homepage": "https://github.com/carlosperate/microbit-clang-wasm-codal",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/carlosperate/microbit-clang-wasm-codal.git"
+    },
+    "bugs": {
+        "url": "https://github.com/carlosperate/microbit-clang-wasm-codal/issues"
+    },
+    "type": "module",
+    "engines": {
+        "node": ">=20"
+    },
+    "files": [
+        "lib/*.js",
+        "lib/*.d.ts",
+        "codal/manifest.json",
+        "codal/payload.tar",
+        "LICENSES",
+        "README.md"
+    ],
+    "exports": {
+        ".": {
+            "node": {
+                "types": "./lib/node.d.ts",
+                "default": "./lib/node.js"
+            },
+            "default": {
+                "types": "./lib/index.d.ts",
+                "default": "./lib/index.js"
+            }
+        }
+    },
+    "dependencies": {
+        "microbit-clang-wasm": "21.11.0"
+    },
+    "scripts": {
+        "configure": "node tools/configure-harness.mjs",
+        "generate": "node tools/generate.mjs",
+        "test": "node --test --test-concurrency=1 test/*.test.mjs"
+    },
+    "codal": {
+        "buildSystem" : {
+            "repository": "carlosperate/microbit-v2-samples",
+            "ref": "ca73d81ad67c13091d681d6ffe4da3ebd36db97e"
+        },
+        "codalJson": {
+            "target": {
+                "name": "codal-microbit-v2",
+                "url": "https://github.com/lancaster-university/codal-microbit-v2",
+                "branch": "v0.3.5",
+                "type": "git"
+            }
+        }
+    }
+}
