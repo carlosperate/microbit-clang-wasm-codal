@@ -1,3 +1,7 @@
+/**
+ * User files by workspace-relative path. **Key order is link order**, and the objects are numbered
+ * by it, so a caller that wants a reproducible binary has to hand them over in a fixed order.
+ */
 export type Files = Record<string, string | Uint8Array>;
 
 export type AssetLoader = (name: string) => Promise<Uint8Array> | Uint8Array;
@@ -21,8 +25,14 @@ export type Result = {
     steps: Step[];
 };
 
-export type Compile =
-    (files: Files, options?: { log?: (message: string) => void }) => Promise<Result>;
+export type CompileOptions = {
+    /** Called as each tool finishes; on a failure the last step reported is the one that failed. */
+    onStep?: (step: Step) => void;
+    /** Aborting rejects with the signal's reason between steps; a tool already running finishes first. */
+    signal?: AbortSignal;
+};
+
+export type Compile = (files: Files, options?: CompileOptions) => Promise<Result>;
 
 export type Manifest = {
     schema: number;

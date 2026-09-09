@@ -27,12 +27,24 @@ const { ok, hex, map, output } = await compile({ 'main.cpp': source });
 
 `compile` takes the user's files, keyed by workspace-relative path, and returns the Intel hex to
 flash, the link map, and everything the tools wrote to stderr. On a compile or link error `ok` is
-false, `hex` is null, and `output` names the file, line and column.
+false, `hex` is null, and `output` names the file, by the path you gave, with its line and column.
+
+**Key order is link order.** The objects are numbered in the order the sources arrive and linked in
+that order, so hand them over sorted, or in whatever fixed order you choose, if you want the same
+bytes from the same input every time.
 
 **C++ only for now** (`.cpp`, `.cc`, `.cxx`): the package carries one compile recipe, taken from a
 C++ translation unit, so a `.c` file is rejected rather than quietly compiled as C++. Headers can be
 any name, and go in the same object. Builds are serialised, so a second `compile` while one is
 running waits rather than overwriting it.
+
+Two options: `onStep` is called with each tool's arguments, exit code and output as it finishes, for
+a build log that streams; `signal` is an `AbortSignal`, and aborting stops the build between steps
+and rejects with the signal's reason.
+
+```js
+await compile(files, { onStep: (step) => console.log(step.tool, step.exitCode), signal: controller.signal });
+```
 
 In Node the package reads its own files from disk. Anywhere else, hand it a loader for the two
 assets it ships, `codal/manifest.json` and `codal/payload.tar`:

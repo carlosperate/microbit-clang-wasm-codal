@@ -5,16 +5,16 @@ import { after, before, test } from 'node:test';
 
 import { compile, manifest } from '../lib/node.js';
 
-const BLINKY = `
-#include "MicroBit.h"
+// The same program the extension's Create Project writes, so what the tests build is what a user gets.
+const PROGRAM = `#include "MicroBit.h"
 
 MicroBit uBit;
 
 int main() {
     uBit.init();
     while (true) {
-        uBit.display.scroll("HI");
-        uBit.sleep(500);
+        uBit.display.scroll("HELLO WORLD");
+        uBit.sleep(1000);
     }
 }
 `;
@@ -32,7 +32,7 @@ after(() => {
 });
 
 test('compiles a CODAL program to an Intel hex', async () => {
-  const result = await compile({ 'main.cpp': BLINKY });
+  const result = await compile({ 'main.cpp': PROGRAM });
 
   assert.equal(result.ok, true, result.output);
   assert.match(result.hex, /^:/);
@@ -52,8 +52,8 @@ test('finds headers in subdirectories the way the native build does', async () =
 
 test('serialises overlapping builds instead of letting them delete each other', async () => {
   const [first, second] = await Promise.all([
-    compile({ 'main.cpp': BLINKY }),
-    compile({ 'main.cpp': BLINKY.replace('HI', 'HO') }),
+    compile({ 'main.cpp': PROGRAM }),
+    compile({ 'main.cpp': PROGRAM.replace('HELLO', 'GOODBYE') }),
   ]);
 
   assert.equal(first.ok, true, first.output);
@@ -61,21 +61,54 @@ test('serialises overlapping builds instead of letting them delete each other', 
   assert.notEqual(first.hex, second.hex, 'the two programs differ, so their hexes should too');
 });
 
+test('reports each step as it finishes, and an aborted build stops at the next step', async () => {
+  const seen = [];
+  const result = await compile({ 'main.cpp': PROGRAM }, { onStep: (step) => seen.push(step.tool) });
+
+  assert.equal(result.ok, true, result.output);
+  assert.deepEqual(seen, result.steps.map((step) => step.tool));
+
+  const controller = new AbortController();
+  const aborted = compile({ 'main.cpp': PROGRAM }, { signal: controller.signal, onStep: () => controller.abort() });
+  await assert.rejects(aborted, { name: 'AbortError' });
+  // The queue survives an abort: the next build runs normally.
+  assert.equal((await compile({ 'main.cpp': PROGRAM })).ok, true);
+});
+
+test('stops for an abort that arrives from outside the build, as a host\'s does', async () => {
+  const controller = new AbortController();
+  // Not from onStep: a host aborts from a message or a timer, which is only ever delivered if the
+  // build hands the event queue back between steps.
+  const timer = setTimeout(() => controller.abort(), 0);
+
+  await assert.rejects(compile({ 'main.cpp': PROGRAM }, { signal: controller.signal }), { name: 'AbortError' });
+  clearTimeout(timer);
+});
+
 test('rejects sources it has no recipe for, and paths the filesystem cannot hold', async () => {
   await assert.rejects(compile({ 'main.c': 'int main(void) { return 0; }\n' }), /only C\+\+ sources/);
   // Beside a valid .cpp too, or half the program would be dropped from a build reported as ok.
-  await assert.rejects(compile({ 'main.cpp': BLINKY, 'extra.c': 'int f(void);\n' }), /only C\+\+ sources/);
-  await assert.rejects(compile({ '/main.cpp': BLINKY }), /is absolute/);
-  await assert.rejects(compile({ '../main.cpp': BLINKY }), /empty or relative segment/);
+  await assert.rejects(compile({ 'main.cpp': PROGRAM, 'extra.c': 'int f(void);\n' }), /only C\+\+ sources/);
+  await assert.rejects(compile({ '/main.cpp': PROGRAM }), /is absolute/);
+  await assert.rejects(compile({ '../main.cpp': PROGRAM }), /empty or relative segment/);
 });
 
 test('reports a compile error with the file, line and column', async () => {
   const result = await compile({ 'main.cpp': 'int main() { oops; }\n' });
 
   assert.equal(result.ok, false);
-  assert.match(result.output, /main\.cpp:1:14: error: use of undeclared identifier 'oops'/);
+  // Named as the caller named it, not by its place in the virtual filesystem.
+  assert.match(result.output, /(^|\s)main\.cpp:1:14: error: use of undeclared identifier 'oops'/);
   assert.equal(result.hex, null);
   assert.equal(result.steps.at(-1).exitCode, 1);
+});
+
+test('keeps the caller\'s own path when it looks like the virtual project\'s', async () => {
+  const result = await compile({ 'project/source/main.cpp': 'int main() { oops; }\n' });
+
+  assert.equal(result.ok, false);
+  // Only the prefix this package added comes off, not the directory the caller named.
+  assert.match(result.output, /(^|\s)project\/source\/main\.cpp:1:14: error:/);
 });
 
 test('declares the toolchain and CODAL versions it was built with', async () => {
