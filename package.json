@@ -34,10 +34,11 @@
                 "types": "./lib/index.d.ts",
                 "default": "./lib/index.js"
             }
-        }
+        },
+        "./package.json": "./package.json"
     },
     "dependencies": {
-        "microbit-clang-wasm": "21.11.0"
+        "microbit-clang-wasm": "21.11.0-alpha.1"
     },
     "scripts": {
         "configure": "node tools/configure-harness.mjs",
@@ -45,7 +46,7 @@
         "test": "node --test --test-concurrency=1 test/*.test.mjs"
     },
     "codal": {
-        "buildSystem" : {
+        "buildSystem": {
             "repository": "carlosperate/microbit-v2-samples",
             "ref": "ca73d81ad67c13091d681d6ffe4da3ebd36db97e"
         },

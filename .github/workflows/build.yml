@@ -119,11 +119,11 @@ jobs:
       # On every other run, so a metadata mistake surfaces long before the tag that publishes.
       - name: Publish (dry run)
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        run: npm publish dist/*.tgz --provenance --access public --dry-run
+        run: npm publish ./dist/*.tgz --provenance --access public --dry-run
 
       # A prerelease goes under `next` so `latest` never points at one.
       - name: Publish
         if: startsWith(github.ref, 'refs/tags/v')
-        run: npm publish dist/*.tgz --provenance --access public ${{ steps.pins.outputs.prerelease == 'true' && '--tag next' || '' }}
+        run: npm publish ./dist/*.tgz --provenance --access public ${{ steps.pins.outputs.prerelease == 'true' && '--tag next' || '' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

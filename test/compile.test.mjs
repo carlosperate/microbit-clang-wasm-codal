@@ -116,7 +116,8 @@ test('declares the toolchain and CODAL versions it was built with', async () => 
   const { version } = await import('microbit-clang-wasm');
 
   assert.equal(packaged.toolchain.package, 'microbit-clang-wasm');
-  assert.match(packaged.toolchain.version, /^\d+\.\d+\.\d+$/);
+  // Both packages carry a prerelease part until their packaging settles.
+  assert.match(packaged.toolchain.version, /^\d+\.\d+\.\d+(-[\w.]+)?$/);
   assert.match(packaged.toolchain.llvm.commit, /^[0-9a-f]{40}$/);
   // The hex tests below prove the recipe against whichever toolchain is installed; that is only
   // evidence about the package we ship if the two are the same one.
