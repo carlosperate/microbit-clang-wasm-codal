@@ -92,15 +92,9 @@ jobs:
       - name: Generate the package
         run: node tools/generate.mjs --samples samples --out .
 
-      # The sysroot the toolchain package ships, not one assembled here, so the native replay checks
-      # the same headers and libraries the WebAssembly compiler uses.
-      - name: Unpack the toolchain's sysroot for the native replay
-        run: tar xf node_modules/microbit-clang-wasm/gen/llvm-resources.tar usr
-
       - name: Test
         env:
           MICROBIT_SAMPLES: ${{ github.workspace }}/samples
-          ATFE_SYSROOT: ${{ github.workspace }}/usr
         run: npm test
 
       - name: Pack

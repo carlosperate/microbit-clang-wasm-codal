@@ -108,18 +108,20 @@ the build harness, `codalJson` the keys written over its `codal.json` — and re
 
 ## Tests
 
-`npm test` compiles a program, checks the hex and checks an error is reported usefully. Two further
-tests run only when they are given what they need, and both compare against the hex the native
-toolchain produced:
+`npm test` compiles a program, checks the hex and checks an error is reported usefully. It needs
+nothing installed.
+
+One further test compares against the hex a native build produced, and runs only when pointed at
+one:
 
 ```sh
 MICROBIT_SAMPLES=<built samples tree> npm test
-ATFE_HOME=<ATfE install> ATFE_SYSROOT=<flat sysroot> MICROBIT_SAMPLES=<tree> npm test
 ```
 
-The first replays this package's recipe through the WebAssembly compiler, the second through the
-native one from a directory holding nothing else. Both have to reproduce the reference hex byte for
-byte; that agreement is what says the browser build is the same build.
+It compiles that tree's own program through the WebAssembly compiler and requires the hex to match
+byte for byte. That agreement is what says the browser build is the same build. CI does it on every
+run, against a native build made minutes earlier from the pinned sources, so there is no reference
+file here to go stale.
 
 ## Licences
 
