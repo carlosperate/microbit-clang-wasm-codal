@@ -5,11 +5,14 @@ name: Build & publish
 # to install is not authored here at all — it comes from the installed toolchain, which is the only
 # thing that knows what it was built from.
 
+# Publishing a GitHub Release is what publishes to npm. Tags do not build: a release creates one,
+# and two runs for one release would build CODAL twice.
 on:
   push:
     branches: '**'
-    tags: 'v*'
   pull_request:
+  release:
+    types: [published]
   workflow_dispatch:
 
 jobs:
@@ -19,7 +22,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     permissions:
       id-token: write
-      contents: read
+      contents: write   # to attach the same tarball to the release
     steps:
       - uses: actions/checkout@v7
 
@@ -108,7 +111,7 @@ jobs:
       # The version is authored in package.json, so a tag that names a different one is a lie about
       # what was published.
       - name: Check the version matches the tag
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'release'
         run: test "$(node -p 'require("./package.json").version')" = "${GITHUB_REF_NAME#v}"
 
       - uses: actions/upload-artifact@v7
@@ -118,12 +121,21 @@ jobs:
 
       # On every other run, so a metadata mistake surfaces long before the tag that publishes.
       - name: Publish (dry run)
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        if: github.event_name != 'release'
         run: npm publish ./dist/*.tgz --provenance --access public --dry-run
+
+      # Before publishing, not after: if npm then refuses the package, the exact file that was sent
+      # is still on the release to look at.
+      - name: Attach the package to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh release upload "${GITHUB_REF_NAME}" ./dist/*.tgz --clobber
 
       # A prerelease goes under `next` so `latest` never points at one.
       - name: Publish
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'release'
         run: npm publish ./dist/*.tgz --provenance --access public ${{ steps.pins.outputs.prerelease == 'true' && '--tag next' || '' }}
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
