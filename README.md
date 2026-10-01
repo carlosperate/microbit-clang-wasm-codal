@@ -1,7 +1,8 @@
 # microbit-clang-wasm-codal
 
 **Builds a BBC micro:bit C++ program to a hex file, in a browser or in Node, with nothing
-installed.** Give it your sources, get back the hex, the link map and the compiler's output.
+installed.** Give it your sources, get back the hex, the link map, and the compiler's output both as
+text and read into errors and warnings.
 
 It is not a copy of CODAL on npm. Three things come together here: CODAL prebuilt as static
 libraries, **the build recipe captured from CODAL's own native CMake build** so the flags are the
@@ -15,19 +16,30 @@ On a desktop you install `arm-none-eabi-gcc` and provide CODAL yourself through
 compiler is the toolchain package and CODAL is this one, so a browser, Node or a VS Code extension
 can build a micro:bit program with nothing else installed and nothing downloaded at run time.
 
-Status: pre-release, work in progress. Nothing is published yet.
+Status: pre-release, work in progress.
 
 ## Using it
 
 ```js
 import { compile } from 'microbit-clang-wasm-codal';
 
-const { ok, hex, map, output } = await compile({ 'main.cpp': source });
+const { ok, hex, map, output, diagnostics } = await compile({ 'main.cpp': source });
 ```
 
 `compile` takes the user's files, keyed by workspace-relative path, and returns the Intel hex to
 flash, the link map, and everything the tools wrote to stderr. On a compile or link error `ok` is
 false, `hex` is null, and `output` names the file, by the path you gave, with its line and column.
+Every source is compiled even after one fails, so each file's errors are there; the link runs only
+once they all compiled.
+
+`diagnostics` holds the errors and warnings, read by
+[microbit-clang-wasm](https://github.com/carlosperate/microbit-clang-wasm)'s `readDiagnostics`:
+file, line, column, message, the warning option, the notes and the include chain. Your files are
+named as you named them, the linker's references included; CODAL's own headers appear as
+`codal/...` and the C and C++ libraries as `/usr/...`. A linker note pointing into CODAL's prebuilt
+libraries, such as where a symbol you also defined lives, names the path they were built at, which
+exists on no machine you have. Each of `steps` carries its own output read the same way, summary
+lines included, so joining their `text` gives that step's `stderr` back.
 
 **Key order is link order.** The objects are numbered in the order the sources arrive and linked in
 that order, so hand them over sorted, or in whatever fixed order you choose, if you want the same
@@ -62,7 +74,7 @@ const codal = createCodal({ loadAsset: async (name) => bytesFor(name) });
   configuration means rebuilding CODAL, which comes later.
 - **No CODAL sources are compiled.** The four archives ship prebuilt; the complete source and header
   trees are here so that any header a program reaches is present, but nothing recompiles them.
-- No diagnostics beyond the compiler's own text, no worker pool, no object cache.
+- No worker pool, no object cache.
 
 ## How it is built
 
@@ -94,13 +106,13 @@ of this package's own build logic, where:
 
 ```
     0 . 305 . 2
-    │   └┬┘   └┬┘
-    │    │     └── packaging version
-    │    └──────── CODAL minor.patch (3.05)
+    │   └┬┘  └┬┘
+    │    │    └─── JS package version
+    │    └──────── CODAL combined minor.patch (3.05)
     └───────────── CODAL major
 ```
 
-So `~0.305.0` locks to CODAL 0.3.5 while taking packaging fixes. While the packaging of a CODAL
+So `~0.305.0` locks to CODAL v0.3.5 while taking packaging fixes. While the packaging of a CODAL
 release is still changing it is published as a prerelease, `0.305.0-alpha.1`, under the `next`
 dist-tag. Which CODAL is inside is pinned in `package.json` under `codal` — `buildSystem` names
 the build harness, `codalJson` the keys written over its `codal.json` — and recorded in
@@ -108,8 +120,9 @@ the build harness, `codalJson` the keys written over its `codal.json` — and re
 
 ## Tests
 
-`npm test` compiles a program, checks the hex and checks an error is reported usefully. It needs
-nothing installed.
+`npm test` compiles a program, checks the hex, and checks that errors in the program, in CODAL's
+headers because of it, and at the link are read into diagnostics naming the caller's files. It
+needs nothing installed.
 
 One further test compares against the hex a native build produced, and runs only when pointed at
 one:

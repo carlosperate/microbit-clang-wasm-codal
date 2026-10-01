@@ -3,6 +3,8 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 
+import { sysroot } from 'microbit-clang-wasm';
+
 import { compile, manifest } from '../lib/node.js';
 
 // The same program the extension's Create Project writes, so what the tests build is what a user gets.
@@ -101,6 +103,74 @@ test('reports a compile error with the file, line and column', async () => {
   assert.match(result.output, /(^|\s)main\.cpp:1:14: error: use of undeclared identifier 'oops'/);
   assert.equal(result.hex, null);
   assert.equal(result.steps.at(-1).exitCode, 1);
+});
+
+// Every file a record names is the caller's, CODAL's or the toolchain's, never the virtual project's.
+function assertNamesOwn(result, files) {
+  const named = result.diagnostics.flatMap((record) => [record, ...record.notes, ...record.includedFrom]).map((at) => at.file);
+  for (const file of named.filter((file) => file !== null)) {
+    assert.ok(file in files || file.startsWith('codal/') || file.startsWith(`${sysroot}/`), `a record names ${file}`);
+  }
+}
+
+test('reads the errors into diagnostics, with each file named as the caller named it', async () => {
+  const result = await compile({ 'main.cpp': 'int main() { oops; }\n' });
+
+  const [error] = result.diagnostics;
+  assert.deepEqual([error.severity, error.file, error.line, error.column], ['error', 'main.cpp', 1, 14]);
+  assert.equal(result.steps[0].diagnostics.map((record) => record.text).join(''), result.steps[0].stderr);
+});
+
+test('a macro that breaks CODAL\'s headers leads back to the caller\'s #define and #include', async () => {
+  const files = { 'main.cpp': `#define Button 42\n${PROGRAM}` };
+  const result = await compile(files);
+
+  assert.equal(result.ok, false);
+  // With a file only: past Clang's limit of 20 comes a "too many errors" with none.
+  const errors = result.diagnostics.filter((record) => record.severity === 'error' && record.file !== null);
+  assert.ok(errors.length > 1 && errors.every((error) => error.file.startsWith('codal/')));
+  assert.ok(errors.some((error) => error.notes.some((note) => note.file === 'main.cpp' && note.line === 1)), 'a note names the #define');
+  assert.ok(errors.every((error) => error.includedFrom.at(-1)?.file === 'main.cpp'), 'each chain ends at the caller\'s #include');
+  assertNamesOwn(result, files);
+});
+
+test('a wrong call into CODAL is the caller\'s error, with CODAL\'s candidates as notes', async () => {
+  const files = { 'main.cpp': PROGRAM.replace('uBit.display.scroll("HELLO WORLD");', 'uBit.display.scroll(1, 2, 3, 4, 5);') };
+  const result = await compile(files);
+
+  const error = result.diagnostics.find((record) => record.severity === 'error');
+  assert.deepEqual([error.file, error.line], ['main.cpp', 8]);
+  assert.ok(error.notes.length > 0 && error.notes.every((note) => note.file.startsWith('codal/')));
+  assertNamesOwn(result, files);
+});
+
+test('a link error names the caller\'s file where the symbol is used', async () => {
+  const files = { 'main.cpp': `void missing();\n${PROGRAM.replace('uBit.init();', 'uBit.init();\n    missing();')}` };
+  const result = await compile(files);
+
+  assert.equal(result.ok, false);
+  const error = result.diagnostics.find((record) => record.severity === 'error');
+  assert.deepEqual([error.file, error.message], [null, 'undefined symbol: missing()']);
+  assert.deepEqual(error.notes.map((note) => [note.file, note.line]), [['main.cpp', 8]]);
+  assert.match(result.output, /\(main\.cpp:8\)/);
+  assertNamesOwn(result, files);
+});
+
+test('compiles every source before stopping, so two broken files report both', async () => {
+  const result = await compile({ 'a.cpp': 'int a() { return nope; }\n', 'main.cpp': 'int main() { oops; }\n' });
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.steps.map((step) => step.exitCode), [1, 1], 'two compiles, and no link');
+  assert.deepEqual(result.diagnostics.filter((record) => record.severity === 'error').map((error) => error.file), ['a.cpp', 'main.cpp']);
+});
+
+test('rewrites only the paths the package made, not a bracket in a name or a message', async () => {
+  const named = await compile({ 'folder(project/source/nested)/main.cpp': 'int main() { oops; }\n' });
+  assert.equal(named.diagnostics[0].file, 'folder(project/source/nested)/main.cpp');
+
+  const said = await compile({ 'main.cpp': 'static_assert(false, "bad (/project/source/example)");\nint main() {}\n' });
+  assert.equal(said.diagnostics[0].message, 'static assertion failed: bad (/project/source/example)');
+  assert.match(said.output, /\| static_assert\(false, "bad \(\/project\/source\/example\)"\);/);
 });
 
 test('keeps the caller\'s own path when it looks like the virtual project\'s', async () => {

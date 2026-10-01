@@ -4,15 +4,25 @@
  */
 export type Files = Record<string, string | Uint8Array>;
 
+import type { Diagnostic, OtherOutput } from 'microbit-clang-wasm';
+
+export type { Diagnostic, DiagnosticLocation, DiagnosticNote, OtherOutput } from 'microbit-clang-wasm';
+
 export type AssetLoader = (name: string) => Promise<Uint8Array> | Uint8Array;
 
 export type Step = {
+    /** The caller's file this step compiled, as they named it; null for the link and the hex. */
+    source: string | null;
     tool: string;
     args: string[];
     exitCode: number;
+    /** With the caller's own file names, as are the diagnostics read from it; CODAL's prebuilt
+      * libraries keep the path they were built at. */
     stderr: string;
     /** Only the step whose output is the hex keeps it; null everywhere else. */
     stdout: Uint8Array | null;
+    /** `stderr` read by the toolchain's `readDiagnostics`: joining every `text` gives it back. */
+    diagnostics: (Diagnostic | OtherOutput)[];
 };
 
 export type Result = {
@@ -22,11 +32,14 @@ export type Result = {
     map: string | null;
     /** Every step's stderr, in order. */
     output: string;
+    /** Every step's errors, warnings and remarks, in order. */
+    diagnostics: Diagnostic[];
     steps: Step[];
 };
 
 export type CompileOptions = {
-    /** Called as each tool finishes; on a failure the last step reported is the one that failed. */
+    /** Called as each tool finishes. Every source is compiled even after one fails; the link and
+      * the hex run only when they all succeeded. */
     onStep?: (step: Step) => void;
     /** Aborting rejects with the signal's reason between steps; a tool already running finishes first. */
     signal?: AbortSignal;

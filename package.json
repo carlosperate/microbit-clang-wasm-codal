@@ -1,6 +1,6 @@
 {
     "name": "microbit-clang-wasm-codal",
-    "version": "0.305.0-alpha.1",
+    "version": "0.305.0-alpha.2",
     "description": "Compile BBC micro:bit C++ programs to a flashable hex in a browser or Node, with prebuilt CODAL and no toolchain to install",
     "author": "Carlos Pereira Atencio",
     "license": "SEE LICENSE IN LICENSES",
@@ -38,7 +38,7 @@
         "./package.json": "./package.json"
     },
     "dependencies": {
-        "microbit-clang-wasm": "21.11.0-alpha.1"
+        "microbit-clang-wasm": "21.11.0-alpha.2"
     },
     "scripts": {
         "configure": "node tools/configure-harness.mjs",
