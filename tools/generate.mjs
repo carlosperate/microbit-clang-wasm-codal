@@ -1,7 +1,7 @@
 // Turns a native CLANG build of microbit-v2-samples into this package's payload.
 //
-// Keeps the three recipes a user program needs — compile one file, link it against the prebuilt
-// archives, make the hex — and drops CODAL's own 199 compiles, whose archives ship prebuilt.
+// Keeps the recipes a user program needs (compile one file, link, make the hex) and CODAL's own
+// compiles and archives, which run when a codal.json asks for other settings than the prebuilt.
 //
 // Usage: node tools/generate.mjs --samples <built samples tree> --out <package dir>
 //        [--commands <ninja -t commands output>]
@@ -58,9 +58,14 @@ const commandsFile = args.commands ? path.resolve(args.commands) : path.join(SAM
 const steps = parseCommands(await readFile(commandsFile, 'utf8'));
 
 const appCompiles = steps.filter((step) => step.kind === 'compile' && step.input.startsWith('project/'));
+const codalCompiles = steps.filter((step) => step.kind === 'compile' && step.input.startsWith('codal/'));
+const archives = steps.filter((step) => step.kind === 'archive');
 const links = steps.filter((step) => step.kind === 'link');
 const objcopies = steps.filter((step) => step.kind === 'objcopy');
 if (appCompiles.length === 0) throw new Error('no application compile found; was the hex target captured?');
+if (codalCompiles.length + appCompiles.length !== steps.filter((step) => step.kind === 'compile').length) {
+  throw new Error('a compile is neither CODAL\'s nor the application\'s');
+}
 if (links.length !== 1) throw new Error(`expected exactly one link step, found ${links.length}`);
 if (objcopies.length !== 1) throw new Error(`expected exactly one objcopy step, found ${objcopies.length}`);
 
@@ -83,10 +88,22 @@ if (firstObject === -1) throw new Error('the link line names none of the applica
 const between = link.args.slice(firstObject, lastObject + 1).filter((arg) => !appObjects.has(arg));
 if (between.length) throw new Error(`the application objects are not contiguous in the link line: ${between[0]}`);
 
+// Every archive CODAL builds is one the link names, or a rebuilt CODAL would link stale archives.
+const linked = link.args.filter((arg) => /\.a$/.test(arg));
+const built = archives.map((archive) => archive.output);
+if (built.length === 0 || built.some((output) => !linked.includes(output)) || linked.some((input) => !built.includes(input))) {
+  throw new Error(`the archives built (${built.join(', ')}) are not the archives linked (${linked.join(', ')})`);
+}
+
 const payload = await collectPayload();
 const codal = await describeSources();
 const recipe = {
   compile: { tool: appCompiles[0].tool, flags: compileFlags },
+  // CODAL's own build, in the native order: run only when codal.json asks for other settings.
+  library: {
+    compiles: codalCompiles.map(({ tool, args, output, input }) => ({ source: input, tool, args: portable(dropInertIncludes(args)), output })),
+    archives: archives.map(({ tool, args, output }) => ({ tool, args: portable(args), output })),
+  },
   link: {
     tool: link.tool,
     flagsBefore: portable(dropInertIncludes(link.args.slice(0, firstObject))),
@@ -94,6 +111,7 @@ const recipe = {
     output: link.output,
     // Read back from the flag that writes it, so the two cannot drift.
     map: link.args.map((arg) => arg.match(/^-Wl,-Map[,=](.+)$/)?.[1]).find(Boolean) ?? null,
+    scripts: linkerScripts(link.args),
   },
   objcopy: { tool: objcopies[0].tool, args: portable(objcopies[0].args) },
 };
@@ -107,9 +125,11 @@ if (claimed !== codal.version) {
   throw new Error(`package version ${packageJson.version} claims CODAL ${claimed}, but ${codal.version} was built`);
 }
 codal.pin = packageJson.codal.codalJson.target.branch;
+// The one target a caller's codal.json may name, since it is the CODAL in the payload.
+codal.target = packageJson.codal.codalJson.target;
 
 const manifest = {
-  schema: 1,
+  schema: 2,
   generated: new Date().toISOString().slice(0, 10),
   codal,
   // Read from the installed toolchain, the only thing that knows what it was built from.
@@ -178,8 +198,9 @@ function normalise(argv) {
     : args.includes('-c') ? 'compile'
     : 'link';
 
+  // An archiver names its output first and takes no -o.
   const at = args.indexOf('-o');
-  const output = at === -1 ? null : args[at + 1];
+  const output = kind === 'archive' ? args.find((arg) => arg.endsWith('.a')) : at === -1 ? null : args[at + 1];
 
   // llvm-objcopy mirrors the input file's permissions onto its output, which WASI cannot do, so it
   // exits non-zero having written a good hex. Its own code skips that when the output is stdout.
@@ -251,6 +272,14 @@ function dropInertIncludes(flags) {
   });
 }
 
+// codal-microbit-v2's CMake links nrf52833-softdevice.ld when DEVICE_BLE is 1 and nrf52833.ld
+// otherwise; the prebuilt configuration is the first, so the second sits beside it.
+function linkerScripts(args) {
+  const softdevice = args.filter((arg) => /^-T.*\/nrf52833-softdevice\.ld$/.test(arg));
+  if (softdevice.length !== 1) throw new Error('the link does not name nrf52833-softdevice.ld once; was the prebuilt configuration built with DEVICE_BLE 1?');
+  return { softdevice: softdevice[0], plain: softdevice[0].replace(/nrf52833-softdevice\.ld$/, 'nrf52833.ld') };
+}
+
 // The reverse of pathMap, for asking the build tree whether a rewritten path was ever real.
 function sourcePathOf(virtualPath) {
   for (const [from, to] of pathMap) {
@@ -301,6 +330,8 @@ async function collectPayload() {
 
   payload['codal/gen/codal_version.h'] = await readFile(path.join(SAMPLES, 'build/libraries/codal-core/gen/codal_version.h'));
   payload['codal/codal_extra_definitions.h'] = await readFile(path.join(SAMPLES, 'build/codal_extra_definitions.h'));
+  // What the prebuilt archives were configured with, and so what a build without one uses.
+  payload['codal/codal.json'] = await readFile(path.join(SAMPLES, 'codal.json'));
 
   // CLANG/platform_includes.h only wraps the ARM_GCC one with `#include "../ARM_GCC/..."`, and that
   // `..` fails in the WASI filesystem. Its own comment says the two are identical, so the wrapper is
@@ -322,10 +353,16 @@ function checkRecipeInputsExist(payload) {
   }
 
   const missing = [];
-  const recipe = [...manifest.compile.flags, ...manifest.link.flagsBefore, ...manifest.link.flagsAfter];
+  const recipe = [
+    ...manifest.compile.flags,
+    ...manifest.link.flagsBefore,
+    ...manifest.link.flagsAfter,
+    manifest.link.scripts.plain,
+    ...manifest.library.compiles.flatMap((step) => step.args),
+  ];
   for (let i = 0; i < recipe.length; i++) {
     if (recipe[i] === '-o') {
-      i++; // the link's own output, written at build time
+      i++; // an output, written at build time
       continue;
     }
     const [prefix, entry] = splitPath(recipe[i]);

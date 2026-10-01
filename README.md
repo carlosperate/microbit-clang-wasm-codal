@@ -8,8 +8,8 @@ It is not a copy of CODAL on npm. Three things come together here: CODAL prebuil
 libraries, **the build recipe captured from CODAL's own native CMake build** so the flags are the
 ones the supported toolchain uses rather than a hand-written imitation, and the logic that drives
 [microbit-clang-wasm](https://github.com/carlosperate/microbit-clang-wasm)'s WebAssembly Clang
-through the compile, link and hex steps. The CODAL sources ship too, because a program can include
-any header in the tree.
+through the compile, link and hex steps. The CODAL sources ship too: a program can include any
+header in the tree, and a `codal.json` with other settings has CODAL compiled from them.
 
 On a desktop you install `arm-none-eabi-gcc` and provide CODAL yourself through
 [microbit-v2-samples](https://github.com/lancaster-university/microbit-v2-samples). Here the
@@ -67,14 +67,42 @@ import { createCodal } from 'microbit-clang-wasm-codal';
 const codal = createCodal({ loadAsset: async (name) => bytesFor(name) });
 ```
 
+## Your `codal.json`
+
+Put a `codal.json` at the root of the files you pass, as in
+[microbit-v2-samples](https://github.com/lancaster-university/microbit-v2-samples), and its
+`config` settings take effect:
+
+```js
+await compile({ 'main.cpp': source, 'codal.json': '{ "config": { "MICROBIT_BLE_ENABLED": 1 } }' });
+```
+
+CODAL is shipped compiled with one set of settings, microbit-v2-samples' default: the SoftDevice
+present and the BLE stack off. Every setting is a `#define` in a header that all of CODAL is
+compiled with, so other settings mean compiling CODAL again: 199 files, about 15 to 30 seconds in a
+browser on a recent laptop. CODAL comes first and your own files after it, so a log reads in order.
+CODAL's steps come through `onStep` like any other, with a `codal` field naming the file each
+built (`codal-core/source/core/CodalFiber.cpp`, `libcodal-core.a`) and how many are done. The result is kept in memory for the next build with the same settings, four sets
+at most, and nothing is saved anywhere.
+
+The header is made by the same rule as CODAL's CMake: your settings in the order you wrote them,
+then the defaults of CODAL's `target-locked.json` you did not set, numbers exactly as written
+(`52.0` stays `52.0`), and `DEVICE_BLE` set to 1 also bringing the SoftDevice and its linker script.
+Each value is written as it is, so a setting the compiler cannot use fails in the compiler.
+
+`compile` rejects, before compiling anything, a `codal.json` it cannot follow, and the message says
+what to change: one that is not valid JSON; a `target` other than the CODAL in this package (leave
+`target` out, or name exactly this one); `application` or `output_folder`, since every C++ file you
+pass is compiled and the hex comes back to you; a `config` that is not an object; and
+`SOFTDEVICE_PRESENT` without `DEVICE_BLE` set to 1, which CODAL's own build refuses too. The
+message's first line says what is wrong and what to do, short enough for a notification; anything
+longer, such as the `"target"` to paste, follows on the lines after it, JSON laid out as in
+`codal.json`. Without a `codal.json`, the shipped settings are used.
+
 ## What it does not do yet
 
-- **`codal.json` is fixed.** This version ships one configuration, prebuilt: the repository default
-  from microbit-v2-samples, which has the SoftDevice present but the BLE stack off. Changing the
-  configuration means rebuilding CODAL, which comes later.
-- **No CODAL sources are compiled.** The four archives ship prebuilt; the complete source and header
-  trees are here so that any header a program reaches is present, but nothing recompiles them.
-- No worker pool, no object cache.
+- **One CODAL version**, v0.3.5. A `target` naming another is refused.
+- **CODAL compiled for your settings is not saved.** It lasts as long as the package is loaded.
 
 ## How it is built
 
@@ -86,7 +114,9 @@ toolchain files — points it at the pinned CODAL with `tools/configure-harness.
 `tools/generate.mjs` over that build's own `ninja -t commands`. Everything authored is in
 `package.json`; the ATfE release is deliberately not repeated here. The
 recipe in `codal/manifest.json` is therefore the native build's flags, rewritten for a virtual
-filesystem rather than written by hand.
+filesystem rather than written by hand: the compile for your files, CODAL's own 199 compiles and 4
+archives, the link and the hex. Before that, CI builds the same checkout with the settings in
+`test/configs/` for the tests below, each from clean.
 
 ```sh
 node tools/configure-harness.mjs <harness checkout>    # then build it with CODAL_TOOLCHAIN=CLANG
@@ -121,20 +151,21 @@ the build harness, `codalJson` the keys written over its `codal.json` — and re
 ## Tests
 
 `npm test` compiles a program, checks the hex, and checks that errors in the program, in CODAL's
-headers because of it, and at the link are read into diagnostics naming the caller's files. It
-needs nothing installed.
+headers because of it, and at the link are read into diagnostics naming the caller's files; that a
+`codal.json` with other settings compiles CODAL once and is then reused; and the header rule and
+every refusal. It needs nothing installed.
 
-One further test compares against the hex a native build produced, and runs only when pointed at
-one:
+Further tests compare against native builds, and run only when pointed at them:
 
 ```sh
-MICROBIT_SAMPLES=<built samples tree> npm test
+MICROBIT_SAMPLES=<built samples tree> MICROBIT_CONFIGS=<one folder per test configuration> npm test
 ```
 
-It compiles that tree's own program through the WebAssembly compiler and requires the hex to match
-byte for byte. That agreement is what says the browser build is the same build. CI does it on every
-run, against a native build made minutes earlier from the pinned sources, so there is no reference
-file here to go stale.
+They compile that tree's own program through the WebAssembly compiler and require the hex to match
+byte for byte: with the shipped CODAL, with CODAL compiled here for the same settings, and for each
+configuration in `test/configs/`, whose header and command list must also match CMake's. That
+agreement is what says the browser build is the same build. CI does it on every run, against native
+builds made minutes earlier from the pinned sources, so there is no reference file here to go stale.
 
 ## Licences
 

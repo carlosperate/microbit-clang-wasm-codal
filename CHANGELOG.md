@@ -1,6 +1,21 @@
 # Changelog
 
-## 0.305.0-alpha.2 - Unreleased
+## 0.305.0-alpha.3 - Unreleased
+
+- Added support for custom `codal.json` files. Pass one with your files and its `config` settings
+  take effect: CODAL is recompiled and kept in memory for the next build with the same settings.
+- The settings header is made by the rule of CODAL's own CMake, byte for byte for any ordinary
+  `codal.json`, numbers kept as written, and `DEVICE_BLE` choosing the SoftDevice and its linker
+  script.
+- A `codal.json` the build cannot follow is refused before anything compiles: invalid JSON,
+  a different CODAL version in `target`, `application`, `output_folder`, a `config` that is not an
+  object, or `SOFTDEVICE_PRESENT` without `DEVICE_BLE` set to 1.
+- Each of CODAL's steps says which file it built and how many of CODAL's files are done, for a
+  build log and a progress display.
+- Tested in CI against native builds of the BLE and `DEVICE_BLE=0` settings: the same header, the
+  same commands and the same hex.
+
+## 0.305.0-alpha.2 - 2026/10/01
 
 - `compile` also returns `diagnostics`: every error and warning read into a record, with file, line,
   column, the warning option, the notes and the include chain, for an editor to show each one at
@@ -10,7 +25,7 @@
   Only the link waits for all of them.
 - Built with `microbit-clang-wasm` 21.11.0-alpha.2, which brings the diagnostics reader.
 
-## 0.305.0-alpha.1 - 2026-09-10
+## 0.305.0-alpha.1 - 2026/09/10
 
 First release: builds a BBC micro:bit C++ program to a hex, in a browser or in Node, with nothing
 else installed.

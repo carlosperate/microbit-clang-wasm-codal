@@ -79,9 +79,24 @@ jobs:
           echo "$HOME/ATfE-${ATFE}-Linux-x86_64/bin" >> "$GITHUB_PATH"
           echo "ATFE_HOME=$HOME/ATfE-${ATFE}-Linux-x86_64" >> "$GITHUB_ENV"
 
+      # The tests compare CODAL compiled in WebAssembly for these settings with their native builds.
+      # Each build is clean: the harness tracks no header dependencies, so a build in place after
+      # codal.json changes recompiles nothing. The same checkout, so the command lists compare as text.
+      - name: Build the test configurations
+        run: |
+          cp samples/codal.json "$RUNNER_TEMP/codal.json"
+          for config in ble no-softdevice; do
+            node tools/configure-harness.mjs samples --config "test/configs/$config.json"
+            (cd samples && CODAL_TOOLCHAIN=CLANG python build.py --clean)
+            mkdir -p "$RUNNER_TEMP/configs/$config"
+            cp samples/codal.json samples/MICROBIT.hex samples/build/codal_extra_definitions.h "$RUNNER_TEMP/configs/$config/"
+            ninja -C samples/build -t commands "$PWD/samples/MICROBIT.hex" > "$RUNNER_TEMP/configs/$config/ninja-commands.txt"
+          done
+          cp "$RUNNER_TEMP/codal.json" samples/codal.json
+
       - name: Build CODAL with the CLANG toolchain
         working-directory: samples
-        run: CODAL_TOOLCHAIN=CLANG python build.py
+        run: CODAL_TOOLCHAIN=CLANG python build.py --clean
 
       # The hex step is not a named ninja target, so it has to be asked for by its output path.
       - name: Capture the build's own command list
@@ -95,6 +110,7 @@ jobs:
       - name: Test
         env:
           MICROBIT_SAMPLES: ${{ github.workspace }}/samples
+          MICROBIT_CONFIGS: ${{ runner.temp }}/configs
         run: npm test
 
       - name: Pack

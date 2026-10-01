@@ -181,6 +181,61 @@ test('keeps the caller\'s own path when it looks like the virtual project\'s', a
   assert.match(result.output, /(^|\s)project\/source\/main\.cpp:1:14: error:/);
 });
 
+// What the extension's Create Project writes, which is the prebuilt configuration.
+const CODAL_JSON = {
+  target: { name: 'codal-microbit-v2', url: 'https://github.com/lancaster-university/codal-microbit-v2', branch: 'v0.3.5', type: 'git' },
+  config: { MICROBIT_BLE_ENABLED: 0, MICROBIT_BLE_PAIRING_MODE: 0 },
+};
+const codalJson = (config) => JSON.stringify({ ...CODAL_JSON, config });
+
+test('a codal.json it cannot follow rejects before compiling anything', async () => {
+  const steps = [];
+  const wrong = JSON.stringify({ ...CODAL_JSON, target: { ...CODAL_JSON.target, branch: 'master' } });
+
+  await assert.rejects(compile({ 'main.cpp': PROGRAM, 'codal.json': wrong }, { onStep: (step) => steps.push(step) }), {
+    name: 'ConfigError',
+    message: /only codal-microbit-v2 v0\.3\.5/,
+  });
+  assert.equal(steps.length, 0);
+});
+
+test('the prebuilt settings in codal.json compile no CODAL', async () => {
+  const result = await compile({ 'main.cpp': PROGRAM, 'codal.json': JSON.stringify(CODAL_JSON, null, 4) });
+
+  assert.equal(result.ok, true, result.output);
+  assert.ok(result.steps.every((step) => step.codal === null));
+});
+
+test('other settings compile CODAL once, before the program\'s own files, then reuse it', async () => {
+  const ble = codalJson({ ...CODAL_JSON.config, MICROBIT_BLE_ENABLED: 1 });
+  const reference = await compile({ 'main.cpp': PROGRAM });
+
+  const first = await compile({ 'main.cpp': PROGRAM, 'codal.json': ble });
+  assert.equal(first.ok, true, first.output);
+  const codal = first.steps.filter((step) => step.codal !== null);
+  assert.equal(codal.length, codal[0].codal.total);
+  assert.deepEqual(codal.map((step) => step.codal.done), codal.map((_, index) => index + 1));
+  // Named as a reader knows them, not by the package's own folders.
+  assert.ok(codal.some((step) => step.codal.file === 'codal-core/source/core/CodalFiber.cpp'));
+  assert.equal(codal.at(-1).codal.file, 'libcodal-microbit-v2.a');
+  assert.deepEqual(first.steps.slice(0, codal.length), codal, 'CODAL compiles before the program');
+  assert.equal(first.steps[codal.length].source, 'main.cpp');
+
+  // A broken program with the same settings: its errors, and no CODAL again.
+  const broken = await compile({ 'main.cpp': 'int main() { oops; }\n', 'codal.json': ble });
+  assert.equal(broken.ok, false);
+  assert.ok(broken.steps.every((step) => step.codal === null));
+
+  const again = await compile({ 'main.cpp': PROGRAM, 'codal.json': ble });
+  assert.ok(again.steps.every((step) => step.codal === null), 'kept from the first build');
+  assert.equal(again.hex, first.hex);
+
+  // Back to the prebuilt settings, whose archives the rebuild replaced in the session.
+  const prebuilt = await compile({ 'main.cpp': PROGRAM });
+  assert.ok(prebuilt.steps.every((step) => step.codal === null));
+  assert.equal(prebuilt.hex, reference.hex, 'the prebuilt archives are back');
+});
+
 test('declares the toolchain and CODAL versions it was built with', async () => {
   const packaged = await manifest();
   const { version } = await import('microbit-clang-wasm');
