@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.305.0-alpha.3 - Unreleased
+## 0.305.0-alpha.3 - 2026/10/02
 
 - Added support for custom `codal.json` files. Pass one with your files and its `config` settings
   take effect: CODAL is recompiled and kept in memory for the next build with the same settings.
