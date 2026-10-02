@@ -1,6 +1,7 @@
-// The samples repository's own program, as both hex tests need it. Shared so the two cannot compile
-// slightly different programs and still both pass.
+// The samples repository's own program, as every hex test needs it, and the one way they compare a
+// hex. Shared so no two can compile slightly different programs and still both pass.
 
+import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
@@ -14,6 +15,12 @@ export async function sampleFiles(samples) {
   return files;
 }
 
-export function sha256(bytes) {
+/** The build succeeded and its hex is the one in `file`, byte for byte. */
+export async function assertHex(result, file) {
+  assert.equal(result.ok, true, result.output);
+  assert.equal(sha256(Buffer.from(result.hex)), sha256(await readFile(file)));
+}
+
+function sha256(bytes) {
   return createHash('sha256').update(bytes).digest('hex');
 }

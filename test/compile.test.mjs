@@ -186,7 +186,6 @@ const CODAL_JSON = {
   target: { name: 'codal-microbit-v2', url: 'https://github.com/lancaster-university/codal-microbit-v2', branch: 'v0.3.5', type: 'git' },
   config: { MICROBIT_BLE_ENABLED: 0, MICROBIT_BLE_PAIRING_MODE: 0 },
 };
-const codalJson = (config) => JSON.stringify({ ...CODAL_JSON, config });
 
 test('a codal.json it cannot follow rejects before compiling anything', async () => {
   const steps = [];
@@ -207,7 +206,7 @@ test('the prebuilt settings in codal.json compile no CODAL', async () => {
 });
 
 test('other settings compile CODAL once, before the program\'s own files, then reuse it', async () => {
-  const ble = codalJson({ ...CODAL_JSON.config, MICROBIT_BLE_ENABLED: 1 });
+  const ble = JSON.stringify({ ...CODAL_JSON, config: { ...CODAL_JSON.config, MICROBIT_BLE_ENABLED: 1 } });
   const reference = await compile({ 'main.cpp': PROGRAM });
 
   const first = await compile({ 'main.cpp': PROGRAM, 'codal.json': ble });

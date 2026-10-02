@@ -11,7 +11,7 @@ import { test } from 'node:test';
 
 import { configure } from '../lib/config.js';
 import { compile, manifest } from '../lib/node.js';
-import { sampleFiles, sha256 } from './samples.mjs';
+import { assertHex, sampleFiles } from './samples.mjs';
 
 const { MICROBIT_SAMPLES: SAMPLES, MICROBIT_CONFIGS: CONFIGS } = process.env;
 const skip = SAMPLES && CONFIGS ? false : 'set MICROBIT_SAMPLES and MICROBIT_CONFIGS to CI\'s native builds';
@@ -42,8 +42,7 @@ for (const name of names) {
 
   test(`${name}: CODAL compiled here gives the native hex`, async () => {
     const result = await compile({ ...(await sampleFiles(SAMPLES)), 'codal.json': await read(name, 'codal.json') });
-    assert.equal(result.ok, true, result.output);
+    await assertHex(result, path.join(CONFIGS, name, 'MICROBIT.hex'));
     assert.ok(result.steps.some((step) => step.codal !== null), 'CODAL was compiled');
-    assert.equal(sha256(Buffer.from(result.hex)), sha256(await readFile(path.join(CONFIGS, name, 'MICROBIT.hex'))));
   });
 }

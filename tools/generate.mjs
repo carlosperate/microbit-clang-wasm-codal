@@ -39,7 +39,7 @@ const sourceAliases = [
 ].sort((a, b) => b.length - a.length);
 
 // Dependency files and colour are host build concerns; the sysroot becomes a token the runner fills
-// in, since it is /usr inside the toolchain package and a real directory in the native replay.
+// in with wherever the toolchain mounts its libraries.
 const DROP_FLAGS = new Set(['-MMD', '-fcolor-diagnostics']);
 const DROP_FLAGS_WITH_VALUE = new Set(['-MT', '-MF']);
 const SYSROOT_TOKEN = '--sysroot={sysroot}';
@@ -124,7 +124,6 @@ const claimed = `${major}.${Math.floor(encoded / 100)}.${encoded % 100}`;
 if (claimed !== codal.version) {
   throw new Error(`package version ${packageJson.version} claims CODAL ${claimed}, but ${codal.version} was built`);
 }
-codal.pin = packageJson.codal.codalJson.target.branch;
 // The one target a caller's codal.json may name, since it is the CODAL in the payload.
 codal.target = packageJson.codal.codalJson.target;
 
@@ -323,10 +322,8 @@ async function collectPayload() {
   };
   await walk(path.join(SAMPLES, 'libraries'), 'codal/libraries');
 
-  // The four archives are what this package ships instead of CODAL's 199 compiles.
-  for (const entry of await readdir(path.join(SAMPLES, 'build'))) {
-    if (/^libcodal-.*\.a$/.test(entry)) payload[`build/${entry}`] = await readFile(path.join(SAMPLES, 'build', entry));
-  }
+  // The archives CODAL built, prebuilt for the shipped configuration.
+  for (const output of built) payload[output] = await readFile(path.join(SAMPLES, output));
 
   payload['codal/gen/codal_version.h'] = await readFile(path.join(SAMPLES, 'build/libraries/codal-core/gen/codal_version.h'));
   payload['codal/codal_extra_definitions.h'] = await readFile(path.join(SAMPLES, 'build/codal_extra_definitions.h'));

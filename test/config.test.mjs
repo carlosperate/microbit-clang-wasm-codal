@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 
-import { ConfigError, configure } from '../lib/config.js';
+import { CONFIG_HEADER, ConfigError, configure } from '../lib/config.js';
 import { flatten, unpackTar } from '../lib/tar.js';
 
 const payload = flatten(unpackTar(await readFile(new URL('../codal/payload.tar', import.meta.url))));
@@ -13,12 +13,14 @@ const { codal } = JSON.parse(await readFile(new URL('../codal/manifest.json', im
 const text = (path) => new TextDecoder().decode(payload[path]);
 const TARGET_JSON = text(`codal/libraries/${codal.target.name}/target-locked.json`);
 
-const header = (config) => configure(JSON.stringify({ config }), TARGET_JSON, codal.target);
-const refusal = (json) => () => configure(typeof json === 'string' ? json : JSON.stringify(json), TARGET_JSON, codal.target);
+/** A codal.json as text, or as an object to write out. */
+const configureWith = (json) => configure(typeof json === 'string' ? json : JSON.stringify(json), TARGET_JSON, codal.target);
+const header = (config) => configureWith({ config });
+const refusal = (json) => () => configureWith(json);
 
 test('the prebuilt codal.json gives the prebuilt header, CMake\'s, byte for byte', () => {
-  const { header, softdevice } = configure(text('codal/codal.json'), TARGET_JSON, codal.target);
-  assert.equal(header, text('codal/codal_extra_definitions.h'));
+  const { header, softdevice } = configureWith(text('codal/codal.json'));
+  assert.equal(header, text(CONFIG_HEADER));
   assert.equal(softdevice, true);
 });
 
@@ -29,14 +31,14 @@ test('writes the caller\'s settings first, in file order, then the target\'s the
 });
 
 test('keeps a number as written and a string\'s text, as CMake does', () => {
-  const written = configure('{ "config": { "LEVEL": 60.0, "BIG": 1e3, "NAME": "\\"hi\\"" } }', TARGET_JSON, codal.target).header;
+  const written = configureWith('{ "config": { "LEVEL": 60.0, "BIG": 1e3, "NAME": "\\"hi\\"" } }').header;
   assert.match(written, /^ #define LEVEL\t 60\.0\n #define BIG\t 1e3\n #define NAME\t "hi"\n/);
   // The target's own 52.0 too, which JSON.parse would have turned into 52.
   assert.match(written, / #define LEVEL_DETECTOR_SPL_8BIT_000_POINT\t 52\.0\n/);
 });
 
 test('a setting written twice takes its last value', () => {
-  const { header: written } = configure('{ "config": { "TWICE": 1, "TWICE": 2 } }', TARGET_JSON, codal.target);
+  const { header: written } = configureWith('{ "config": { "TWICE": 1, "TWICE": 2 } }');
   assert.deepEqual(written.split('\n').filter((line) => line.includes('TWICE')), [' #define TWICE\t 2']);
 });
 

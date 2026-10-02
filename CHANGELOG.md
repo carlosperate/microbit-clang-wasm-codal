@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.305.0-alpha.4 - Unreleased
+
+- Less memory: the shipped CODAL archives are no longer copied when the package loads.
+- Each build step removes the files it is about to write, so no stale file can be linked, whichever
+  step writes it.
+- The manifest drops `codal.pin`, which repeated `codal.target.branch`.
+
 ## 0.305.0-alpha.3 - 2026/10/02
 
 - Added support for custom `codal.json` files. Pass one with your files and its `config` settings
