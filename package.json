@@ -1,6 +1,6 @@
 {
     "name": "microbit-clang-wasm-codal",
-    "version": "0.305.0-alpha.3",
+    "version": "0.305.0-alpha.4",
     "description": "Compile BBC micro:bit CODAL C++ programs to a flashable hex in a browser or Node, without any toolchain to install",
     "author": "Carlos Pereira Atencio",
     "license": "SEE LICENSE IN LICENSES",

@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.305.0-alpha.4 - Unreleased
+## 0.305.0-alpha.4 - 2026/10/06
 
 - Added `complete()`, which lists what can go at a position in a file for an editor's completions:
   the members after `uBit.`, anything in scope and a call's overloads, with types, parameters,
