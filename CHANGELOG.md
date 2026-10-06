@@ -2,6 +2,12 @@
 
 ## 0.305.0-alpha.4 - Unreleased
 
+- Added `complete()`, which lists what can go at a position in a file for an editor's completions:
+  the members after `uBit.`, anything in scope and a call's overloads, with types, parameters,
+  defaults and CODAL's documentation, by the same recipe and `codal.json` as a build and with no
+  CODAL compiled. Of CODAL's macros only those a program passes to it or gets back are listed, and
+  the deep-sleep members every component inherits are left out. It runs in a
+  filesystem of its own, so it never waits for a build or changes one.
 - Less memory: the shipped CODAL archives are no longer copied when the package loads.
 - Each build step removes the files it is about to write, so no stale file can be linked, whichever
   step writes it.

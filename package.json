@@ -38,7 +38,7 @@
         "./package.json": "./package.json"
     },
     "dependencies": {
-        "microbit-clang-wasm": "21.11.0-alpha.2"
+        "microbit-clang-wasm": "21.11.0-alpha.3"
     },
     "scripts": {
         "configure": "node tools/configure-harness.mjs",

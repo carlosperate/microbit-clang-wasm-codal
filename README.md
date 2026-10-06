@@ -2,7 +2,8 @@
 
 **Builds a BBC micro:bit C++ program to a hex file, in a browser or in Node, with nothing
 installed.** Give it your sources, get back the hex, the link map, and the compiler's output both as
-text and read into errors and warnings.
+text and read into errors and warnings. It also lists what can be typed at a position, for an
+editor's completions.
 
 It is not a copy of CODAL on npm. Three things come together here: CODAL prebuilt as static
 libraries, **the build recipe captured from CODAL's own native CMake build** so the flags are the
@@ -57,6 +58,36 @@ and rejects with the signal's reason.
 ```js
 await compile(files, { onStep: (step) => console.log(step.tool, step.exitCode), signal: controller.signal });
 ```
+
+## Completions
+
+`complete` lists what can go at a position in one of your files, for an editor's completion list:
+the members after `uBit.` or `uBit.display.`, anything in scope, a call's overloads, with each
+one's type, parameters, defaults and the first sentence of CODAL's documentation. It runs the same
+recipe and `codal.json` settings a build would, up to the position, and compiles no CODAL, so a
+changed `codal.json` changes the list at once.
+
+```js
+import { complete } from 'microbit-clang-wasm-codal';
+
+const { completions } = await complete({ 'main.cpp': source }, { file: 'main.cpp', line: 7, column: 10 });
+```
+
+It needs only the file, the headers it may include and `codal.json`. The line counts from 1 and the
+column in bytes of UTF-8, as Clang does. The records are
+[microbit-clang-wasm](https://github.com/carlosperate/microbit-clang-wasm)'s `readCompletions`,
+with your own file names, and of the 14,000 macros CODAL brings in only the ones a program passes
+to it or gets back: component IDs (`MICROBIT_ID_BUTTON_A`), event values
+(`MICROBIT_BUTTON_EVT_CLICK`), listen flags (`MESSAGE_BUS_LISTENER_IMMEDIATE`), the event service's
+(`MES_…`) and error codes (`MICROBIT_OK`, `MICROBIT_NO_DATA`). Your own `#define`s are listed too,
+and so are the settings you write in `codal.json`'s `config`.
+The deep-sleep members every CODAL component inherits from `CodalComponent` are left out. A
+request takes a tenth to a quarter of a second in Node once loaded; the first after a
+change of settings also lists CODAL's macros, about a quarter of a second more. Completions run in a filesystem of their
+own, so one never waits for a build or changes it, and they queue only behind each other. A
+`signal` aborted before a request starts drops it.
+
+## Loading it
 
 In Node the package reads its own files from disk. Anywhere else, hand it a loader for the two
 assets it ships, `codal/manifest.json` and `codal/payload.tar`:
@@ -152,8 +183,9 @@ the build harness, `codalJson` the keys written over its `codal.json` — and re
 
 `npm test` compiles a program, checks the hex, and checks that errors in the program, in CODAL's
 headers because of it, and at the link are read into diagnostics naming the caller's files; that a
-`codal.json` with other settings compiles CODAL once and is then reused; and the header rule and
-every refusal. It needs nothing installed.
+`codal.json` with other settings compiles CODAL once and is then reused; the header rule and
+every refusal; and what `complete` lists, which macros among it, and that a build running beside it
+gives the same hex. It needs nothing installed.
 
 Further tests compare against native builds, and run only when pointed at them:
 

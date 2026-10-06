@@ -5,9 +5,9 @@
  */
 export type Files = Record<string, string | Uint8Array>;
 
-import type { Diagnostic, OtherOutput } from 'microbit-clang-wasm';
+import type { CompletionRecord, Diagnostic, OtherOutput } from 'microbit-clang-wasm';
 
-export type { Diagnostic, DiagnosticLocation, DiagnosticNote, OtherOutput } from 'microbit-clang-wasm';
+export type { CompletionChunk, CompletionRecord, Diagnostic, DiagnosticLocation, DiagnosticNote, OtherOutput } from 'microbit-clang-wasm';
 
 export type AssetLoader = (name: string) => Promise<Uint8Array> | Uint8Array;
 
@@ -53,6 +53,33 @@ export type CompileOptions = {
 /** Rejects with a `ConfigError`, compiling nothing, for a codal.json it cannot follow. */
 export type Compile = (files: Files, options?: CompileOptions) => Promise<Result>;
 
+export type CompleteOptions = {
+    /** The file to complete in, named as in `files`: a C++ source, or a header parsed on its own. */
+    file: string;
+    /** From 1, the column in bytes of UTF-8, as Clang counts it. */
+    line: number;
+    column: number;
+    /** Aborting before the request starts rejects with the signal's reason; one running finishes. */
+    signal?: AbortSignal;
+};
+
+export type Completion = {
+    /** The toolchain's records, with the caller's own file names. Of the macros CODAL defines only
+      * the ones a program passes to it or gets back are kept: component IDs, event values, listen
+      * flags, the event service's and error codes, as are the caller's own `#define`s and
+      * `codal.json` settings. CodalComponent's deep-sleep members are not. */
+    completions: CompletionRecord[];
+    /** What Clang printed on stderr, with the caller's own file names. */
+    stderr: string;
+};
+
+/**
+ * What can go at a position, by the recipe and the `codal.json` a build of these files would use,
+ * with no CODAL compiled. `files` needs only the file, the headers it may include and `codal.json`.
+ * Its own filesystem, so it never waits for a build or changes one. Rejects as `Compile` does.
+ */
+export type Complete = (files: Files, options: CompleteOptions) => Promise<Completion>;
+
 /** Its message's first line says what is wrong and what to change; any further lines are detail. */
 export class ConfigError extends Error {
     name: 'ConfigError';
@@ -81,6 +108,7 @@ export type Manifest = {
 
 export type Codal = {
     compile: Compile;
+    complete: Complete;
     manifest: () => Promise<Manifest>;
 };
 
