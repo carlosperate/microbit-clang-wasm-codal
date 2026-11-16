@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.305.0-alpha.5 - Unreleased
+## 0.305.0-alpha.5 - 2026/11/16
 
 - `complete()` precompiles `MicroBit.h` once per set of `codal.json` settings and loads it instead
   of parsing it on every request.
