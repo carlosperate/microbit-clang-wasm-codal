@@ -19,14 +19,16 @@ function at(source) {
 
 const program = (body) => `#include "MicroBit.h"\n\nMicroBit uBit;\n\nint main() {\n    uBit.init();\n${body}\n}\n`;
 
-async function completeIn(source, extra = {}) {
+async function completeWith(source, extra = {}) {
   const { text, line, column } = at(source);
   const started = performance.now();
   const result = await complete({ 'main.cpp': text, ...extra }, { file: 'main.cpp', line, column });
   // A bound for a regression, not a measurement: a warm answer takes about a tenth of this.
   assert.ok(performance.now() - started < 2000, `took ${Math.round(performance.now() - started)} ms`);
-  return result.completions;
+  return result;
 }
+
+const completeIn = async (source, extra) => (await completeWith(source, extra)).completions;
 
 const candidate = (records, name) => records.find((record) => record.kind === 'candidate' && record.name === name);
 const type = (record) => record?.chunks.find((chunk) => chunk.kind === 'informative')?.text;
@@ -48,10 +50,62 @@ test('uBit.display. lists scroll with its documentation', async () => {
   assert.deepEqual(records.filter((record) => record.name?.startsWith('deepSleep')), []);
 });
 
+// Each from a header precompiled for its own settings: Clang refuses one made for others.
 test('the settings in codal.json decide what is listed, with no CODAL compiled', async () => {
-  const records = await completeIn(program('    uBit.@'), { 'codal.json': JSON.stringify({ config: { DEVICE_BLE: 0 } }) });
-  assert.equal(candidate(records, 'bleManager'), undefined);
-  assert.ok(candidate(await completeIn(program('    uBit.@')), 'bleManager'), 'the prebuilt settings have it');
+  const changed = await completeWith(program('    uBit.@'), { 'codal.json': JSON.stringify({ config: { DEVICE_BLE: 0 } }) });
+  assert.equal(candidate(changed.completions, 'bleManager'), undefined);
+  assert.equal(changed.precompiled, true);
+  const prebuilt = await completeWith(program('    uBit.@'));
+  assert.ok(candidate(prebuilt.completions, 'bleManager'), 'the prebuilt settings have it');
+  assert.equal(prebuilt.precompiled, true);
+});
+
+// The header declares two builtins, reserved names an editor hides, and may reorder one name's overloads.
+const comparable = (records) => records
+  .filter((record) => record.kind !== 'opening-paren' && !record.name?.startsWith('__builtin_arm_'))
+  .map((record) => JSON.stringify(record))
+  .sort();
+
+test('MicroBit.h comes precompiled, and lists what parsing it afresh lists', async () => {
+  for (const body of ['    uBit.@', '    uBit.display.@', '    uBit.display.scroll(@', '    @']) {
+    const fast = await completeWith(program(body));
+    // A `;` first changes nothing in the program, and keeps the header out.
+    const slow = await completeWith(`;\n${program(body)}`);
+    assert.deepEqual([fast.precompiled, slow.precompiled], [true, false]);
+    assert.deepEqual(comparable(fast.completions), comparable(slow.completions), body);
+  }
+});
+
+test('a file with more than comments before the include completes as it builds, without the header', async () => {
+  // Each prefix, and whether MicroBit.h is then included: precompiled, with uBit.'s members listed.
+  const prefixes = [
+    ['// A licence.\n/* More of it. */\n\n', true],
+    // MicroBit.h's own guard, defined first, keeps it out of the build.
+    ['#define MICROBIT_H\n', false],
+    // Each comment ends at its first */, so the #define between two is seen.
+    ['/* licence */\n#define MICROBIT_H\n/* why */\n', false],
+    // The backslash carries the comment onto the include, so there is none.
+    ['// note \\\n', false],
+  ];
+  for (const [prefix, included] of prefixes) {
+    const { precompiled, completions } = await completeWith(`${prefix}${program('    uBit.@')}`);
+    assert.deepEqual([precompiled, Boolean(candidate(completions, 'display'))], [included, included], prefix);
+  }
+  // The caller's own MicroBit.h could be the one an include finds.
+  const own = await completeWith(program('    uBit.@'), { 'lib/MicroBit.h': '#pragma once\n' });
+  assert.equal(own.precompiled, false);
+});
+
+// Within completeWith's time bound: a banner of slashes is read once, not tried every way it splits.
+test('a banner comment before ordinary code is read in one pass', async () => {
+  const banner = await completeWith(`${'/'.repeat(200)}\nint before;\n${program('    uBit.@')}`);
+  assert.equal(banner.precompiled, false);
+});
+
+test('a position above the include completes as it builds, without the header', async () => {
+  const above = await completeWith(`@\n${program('')}`);
+  assert.equal(above.precompiled, false);
+  assert.equal(candidate(above.completions, 'MicroBit'), undefined, 'MicroBit.h is not included yet');
 });
 
 test('of the macros, only those a program passes to CODAL are listed, and the user\'s own', async () => {

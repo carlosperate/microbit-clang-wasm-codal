@@ -71,6 +71,9 @@ export type Completion = {
     completions: CompletionRecord[];
     /** What Clang printed on stderr, with the caller's own file names. */
     stderr: string;
+    /** Whether MicroBit.h came precompiled: only below a file's opening include of it, which
+      * nothing but blank lines and comments come before, when no file given is named MicroBit.h. */
+    precompiled: boolean;
 };
 
 /**

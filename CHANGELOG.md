@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.305.0-alpha.5 - Unreleased
+
+- `complete()` precompiles `MicroBit.h` once per set of `codal.json` settings and loads it instead
+  of parsing it on every request.
+  `uBit.` autocompletion is about 4x or 5x faster than before.
+  The first request after a load or a change of settings takes is slower, only once.
+
 ## 0.305.0-alpha.4 - 2026/10/06
 
 - Added `complete()`, which lists what can go at a position in a file for an editor's completions:

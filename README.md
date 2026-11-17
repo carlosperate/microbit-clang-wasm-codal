@@ -81,11 +81,16 @@ to it or gets back: component IDs (`MICROBIT_ID_BUTTON_A`), event values
 (`MICROBIT_BUTTON_EVT_CLICK`), listen flags (`MESSAGE_BUS_LISTENER_IMMEDIATE`), the event service's
 (`MES_…`) and error codes (`MICROBIT_OK`, `MICROBIT_NO_DATA`). Your own `#define`s are listed too,
 and so are the settings you write in `codal.json`'s `config`.
-The deep-sleep members every CODAL component inherits from `CodalComponent` are left out. A
-request takes a tenth to a quarter of a second in Node once loaded; the first after a
-change of settings also lists CODAL's macros, about a quarter of a second more. Completions run in a filesystem of their
-own, so one never waits for a build or changes it, and they queue only behind each other. A
-`signal` aborted before a request starts drops it.
+The deep-sleep members every CODAL component inherits from `CodalComponent` are left out.
+
+`MicroBit.h` is precompiled once per set of settings and loaded rather than parsed again, below a
+file's opening `#include "MicroBit.h"` when only blank lines and comments come before it and none
+of your files is itself named `MicroBit.h`. Anywhere else the file is parsed whole, exactly as it
+builds, and `precompiled` in the result says which it was. Once loaded, a list after `.` takes about 30 ms
+in Node and a list of everything in scope about a fifth of a second. The first request after a
+change of settings also lists CODAL's macros and precompiles `MicroBit.h`, about half a second
+more. Completions run in a filesystem of their own, so one never waits for a build or changes it,
+and they queue only behind each other. A `signal` aborted before a request starts drops it.
 
 ## Loading it
 
