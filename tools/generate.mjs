@@ -66,6 +66,9 @@ if (appCompiles.length === 0) throw new Error('no application compile found; was
 if (codalCompiles.length + appCompiles.length !== steps.filter((step) => step.kind === 'compile').length) {
   throw new Error('a compile is neither CODAL\'s nor the application\'s');
 }
+// The prebuilt archives' debug information names CODAL's sources by the path this build gave them.
+const builtAt = sourceAliases.find((alias) => codalCompiles.every(({ native }) => native.startsWith(`${alias}/`)));
+if (builtAt === undefined) throw new Error('CODAL\'s sources were not all compiled by their path in the harness');
 if (links.length !== 1) throw new Error(`expected exactly one link step, found ${links.length}`);
 if (objcopies.length !== 1) throw new Error(`expected exactly one objcopy step, found ${objcopies.length}`);
 
@@ -77,6 +80,9 @@ for (const compile of appCompiles.slice(1)) {
     throw new Error(`application files do not share one flag set; ${compile.input} differs from ${appCompiles[0].input}`);
   }
 }
+// The `optimisation` option replaces this flag, so without exactly one it would do nothing.
+const levels = compileFlags.filter((arg) => arg.startsWith('-O'));
+if (levels.length !== 1) throw new Error(`expected one -O flag in the application compile, found ${levels.join(' ') || 'none'}`);
 
 // The user's own files replace the sample objects, so the link splits around them. They are
 // contiguous in the line CMake generates, and everything after them is CODAL's.
@@ -126,6 +132,7 @@ if (claimed !== codal.version) {
 }
 // The one target a caller's codal.json may name, since it is the CODAL in the payload.
 codal.target = packageJson.codal.codalJson.target;
+codal.builtAt = builtAt;
 
 const manifest = {
   schema: 2,
@@ -207,7 +214,7 @@ function normalise(argv) {
     const target = args[args.length - 1];
     return { kind, tool, args: [...args.slice(0, -1), '-'], stdoutTo: path.basename(target) };
   }
-  if (kind === 'compile') return { kind, tool, args, output, input: args[args.indexOf('-c') + 1] };
+  if (kind === 'compile') return { kind, tool, args, output, input: args[args.indexOf('-c') + 1], native: argv[argv.indexOf('-c') + 1] };
   return { kind, tool, args, output };
 }
 

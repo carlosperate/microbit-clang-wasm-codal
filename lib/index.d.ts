@@ -33,6 +33,9 @@ export type Result = {
     ok: boolean;
     /** Intel hex, or null if a step failed. */
     hex: string | null;
+    /** The linked program the hex was made from, with its debug information; null if a step failed.
+      * The caller's own copy, free to transfer. */
+    elf: Uint8Array | null;
     map: string | null;
     /** Every step's stderr, in order. */
     output: string;
@@ -48,7 +51,11 @@ export type CompileOptions = {
     onStep?: (step: Step) => void;
     /** Aborting rejects with the signal's reason between steps; a tool already running finishes first. */
     signal?: AbortSignal;
+    /** The level the caller's files compile at, `-O2` if absent. CODAL keeps the recipe's own. */
+    optimisation?: Optimisation;
 };
+
+export type Optimisation = '-O0' | '-O1' | '-O2' | '-O3' | '-Os' | '-Oz' | '-Og';
 
 /** Rejects with a `ConfigError`, compiling nothing, for a codal.json it cannot follow. */
 export type Compile = (files: Files, options?: CompileOptions) => Promise<Result>;
@@ -99,6 +106,8 @@ export type Manifest = {
         libraries: { name: string, url: string | null, commit: string | null }[];
         /** The one `target` a codal.json may name: the CODAL in this package. */
         target: { name: string, url: string, branch: string, type: string };
+        /** Where the native build that made the prebuilt archives had its harness. */
+        builtAt: string;
     };
     toolchain: {
         package: string;
@@ -109,10 +118,21 @@ export type Manifest = {
     layout: { build: string, project: string };
 };
 
+/** Where an ELF's debug information says its sources are, as absolute path prefixes. A debugger
+  * may print the root twice, as `//project/source/`. */
+export type SourcePrefixes = {
+    /** The caller's files: the rest of a path is the file's name as given to `compile()`. */
+    project: string;
+    /** CODAL's, compiled here or prebuilt: the rest of a path is the file's under the payload's
+      * `codal/libraries/`. */
+    codal: string[];
+};
+
 export type Codal = {
     compile: Compile;
     complete: Complete;
     manifest: () => Promise<Manifest>;
+    sourcePrefixes: () => Promise<SourcePrefixes>;
 };
 
 /** `loadAsset` is given a package-relative path, such as `codal/payload.tar`. */

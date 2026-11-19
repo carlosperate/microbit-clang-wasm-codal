@@ -1,11 +1,21 @@
 # Changelog
 
+## 0.305.0-alpha.6 - Unreleased
+
+- `compile()` also returns `elf`: the linked program the hex was made from, with its debug
+  information, for a debugger. `null` when a step fails.
+- An `optimisation` option compiles your own files at another level, `-O0` to step through them
+  line by line. CODAL stays as it was built.
+- Added `sourcePrefixes()`, the folders an ELF's debug information names its sources under, so a
+  debugger can map them back to your files and to CODAL's sources in the package.
+- The manifest records where CI's native build had its harness, as `codal.builtAt`.
+
 ## 0.305.0-alpha.5 - 2026/11/16
 
 - `complete()` precompiles `MicroBit.h` once per set of `codal.json` settings and loads it instead
   of parsing it on every request.
   `uBit.` autocompletion is about 4x or 5x faster than before.
-  The first request after a load or a change of settings takes is slower, only once.
+  The first request after a load or a change of settings is slower, only once.
 
 ## 0.305.0-alpha.4 - 2026/10/06
 

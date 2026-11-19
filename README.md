@@ -1,8 +1,8 @@
 # microbit-clang-wasm-codal
 
 **Builds a BBC micro:bit C++ program to a hex file, in a browser or in Node, with nothing
-installed.** Give it your sources, get back the hex, the link map, and the compiler's output both as
-text and read into errors and warnings. It also lists what can be typed at a position, for an
+installed.** Give it your sources, get back the hex, the ELF for a debugger, the link map, and the
+compiler's output both as text and read into errors and warnings. It also lists what can be typed at a position, for an
 editor's completions.
 
 It is not a copy of CODAL on npm. Three things come together here: CODAL prebuilt as static
@@ -91,6 +91,40 @@ in Node and a list of everything in scope about a fifth of a second. The first r
 change of settings also lists CODAL's macros and precompiles `MicroBit.h`, about half a second
 more. Completions run in a filesystem of their own, so one never waits for a build or changes it,
 and they queue only behind each other. A `signal` aborted before a request starts drops it.
+
+## Debugging
+
+`elf` in the result is the linked program the hex was made from, with its debug information, for
+GDB or any debugger that reads an ELF. It is `null` whenever `hex` is, and each result has its own
+copy, free to transfer to a worker.
+
+Your files compile at `-O2`, as CODAL's native build has them, which inlines small functions and
+leaves a debugger little to stop in. The `optimisation` option compiles them at another level,
+`-O0` to step through them line by line:
+
+```js
+const { hex, elf } = await compile(files, { optimisation: '-O0' });
+```
+
+It takes Clang's `-O0`, `-O1`, `-O2`, `-O3`, `-Os`, `-Oz` and `-Og`, and rejects anything else.
+CODAL keeps the level it was built at. The hex differs from an `-O2` build's, so flash the one that
+came with the ELF you debug.
+
+`sourcePrefixes()` gives the folders the debug information names sources under, so a debugger can
+open them:
+
+```js
+import { sourcePrefixes } from 'microbit-clang-wasm-codal';
+
+const { project, codal } = await sourcePrefixes();
+```
+
+After `project` (`/project/source/`) comes your file's name as you gave it. `codal` lists two
+prefixes: `/codal/libraries/` for CODAL's headers and for CODAL compiled for your `codal.json`,
+and the folder CI's native build ran in for the prebuilt libraries. After either comes the file's
+path under `codal/libraries/` in `codal/payload.tar`, such as
+`codal-microbit-v2/model/MicroBit.cpp`. GDB
+may print a path with the root doubled, as `//project/source/main.cpp`.
 
 ## Loading it
 
@@ -187,7 +221,9 @@ the build harness, `codalJson` the keys written over its `codal.json` — and re
 ## Tests
 
 `npm test` compiles a program, checks the hex, and checks that errors in the program, in CODAL's
-headers because of it, and at the link are read into diagnostics naming the caller's files; that a
+headers because of it, and at the link are read into diagnostics naming the caller's files; that
+the ELF comes back, an `-O0` build keeps a function `-O2` inlines away, and its debug information
+names sources under `sourcePrefixes()`; that a
 `codal.json` with other settings compiles CODAL once and is then reused; the header rule and
 every refusal; and what `complete` lists, which macros among it, and that a build running beside it
 gives the same hex. It needs nothing installed.

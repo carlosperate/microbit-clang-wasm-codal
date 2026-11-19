@@ -3,9 +3,9 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 
-import { sysroot } from 'microbit-clang-wasm';
+import { createSession, sysroot } from 'microbit-clang-wasm';
 
-import { compile, manifest } from '../lib/node.js';
+import { compile, manifest, sourcePrefixes } from '../lib/node.js';
 
 // The same program the extension's Create Project writes, so what the tests build is what a user gets.
 const PROGRAM = `#include "MicroBit.h"
@@ -41,6 +41,41 @@ test('compiles a CODAL program to an Intel hex', async () => {
   assert.match(result.hex, /:00000001FF\s*$/); // the end-of-file record
   assert.ok(result.hex.length > 100_000, `hex looks too small: ${result.hex.length} bytes`);
   assert.ok(result.map.startsWith('     VMA      LMA     Size Align'), 'the link map is missing its header');
+});
+
+const ELF = 'MICROBIT.elf';
+
+let inspecting;
+
+// One of the toolchain's tools over a build's ELF, which argv names as ELF.
+async function inspect(argv, elf) {
+  const session = (inspecting ??= createSession());
+  await session.writeFile(ELF, elf);
+  const text = { stdout: '', stderr: '' };
+  const decoders = { stdout: new TextDecoder(), stderr: new TextDecoder() };
+  const sink = (name) => (bytes) => bytes && (text[name] += decoders[name].decode(bytes, { stream: true }));
+  const exitCode = await session.run(argv, { stdout: sink('stdout'), stderr: sink('stderr') });
+  assert.equal(exitCode, 0, `${argv[0]} failed: ${text.stderr}`);
+  return text.stdout;
+}
+
+// Small enough that -O2 inlines it away, leaving a debugger nothing to stop in.
+const STEPPED = PROGRAM.replace('int main() {', 'static int addOne(int value) {\n    return value + 1;\n}\n\nint main() {')
+  .replace('uBit.sleep(1000);', 'uBit.sleep(addOne(999));');
+
+test('returns the ELF, and compiles the caller\'s files at the level asked for', async () => {
+  const optimised = await compile({ 'main.cpp': STEPPED });
+  assert.equal(optimised.ok, true, optimised.output);
+  // Moved away as a worker would, before the next build: neither may touch the other.
+  const moved = structuredClone(optimised.elf, { transfer: [optimised.elf.buffer] });
+  const debug = await compile({ 'main.cpp': STEPPED }, { optimisation: '-O0' });
+
+  assert.equal(debug.ok, true, debug.output);
+  assert.equal(new TextDecoder().decode(debug.elf.subarray(0, 4)), '\x7fELF');
+  assert.ok(debug.steps[0].args.includes('-O0') && !debug.steps[0].args.includes('-O2'), 'the level replaces the recipe\'s');
+  assert.notEqual(debug.hex, optimised.hex);
+  assert.doesNotMatch(await inspect(['llvm-nm', '-C', ELF], moved), / addOne\(int\)$/m);
+  assert.match(await inspect(['llvm-nm', '-C', ELF], debug.elf), / addOne\(int\)$/m);
 });
 
 test('finds headers in subdirectories the way the native build does', async () => {
@@ -93,6 +128,7 @@ test('rejects sources it has no recipe for, and paths the filesystem cannot hold
   await assert.rejects(compile({ 'main.cpp': PROGRAM, 'extra.c': 'int f(void);\n' }), /only C\+\+ sources/);
   await assert.rejects(compile({ '/main.cpp': PROGRAM }), /is absolute/);
   await assert.rejects(compile({ '../main.cpp': PROGRAM }), /empty or relative segment/);
+  await assert.rejects(compile({ 'main.cpp': PROGRAM }, { optimisation: '-O9' }), /optimisation is one of -O0, /);
 });
 
 test('reports a compile error with the file, line and column', async () => {
@@ -102,6 +138,7 @@ test('reports a compile error with the file, line and column', async () => {
   // Named as the caller named it, not by its place in the virtual filesystem.
   assert.match(result.output, /(^|\s)main\.cpp:1:14: error: use of undeclared identifier 'oops'/);
   assert.equal(result.hex, null);
+  assert.equal(result.elf, null);
   assert.equal(result.steps.at(-1).exitCode, 1);
 });
 
@@ -187,6 +224,8 @@ const CODAL_JSON = {
   config: { MICROBIT_BLE_ENABLED: 0, MICROBIT_BLE_PAIRING_MODE: 0 },
 };
 
+const BLE = JSON.stringify({ ...CODAL_JSON, config: { ...CODAL_JSON.config, MICROBIT_BLE_ENABLED: 1 } });
+
 test('a codal.json it cannot follow rejects before compiling anything', async () => {
   const steps = [];
   const wrong = JSON.stringify({ ...CODAL_JSON, target: { ...CODAL_JSON.target, branch: 'master' } });
@@ -206,10 +245,9 @@ test('the prebuilt settings in codal.json compile no CODAL', async () => {
 });
 
 test('other settings compile CODAL once, before the program\'s own files, then reuse it', async () => {
-  const ble = JSON.stringify({ ...CODAL_JSON, config: { ...CODAL_JSON.config, MICROBIT_BLE_ENABLED: 1 } });
   const reference = await compile({ 'main.cpp': PROGRAM });
 
-  const first = await compile({ 'main.cpp': PROGRAM, 'codal.json': ble });
+  const first = await compile({ 'main.cpp': PROGRAM, 'codal.json': BLE });
   assert.equal(first.ok, true, first.output);
   const codal = first.steps.filter((step) => step.codal !== null);
   assert.equal(codal.length, codal[0].codal.total);
@@ -221,11 +259,11 @@ test('other settings compile CODAL once, before the program\'s own files, then r
   assert.equal(first.steps[codal.length].source, 'main.cpp');
 
   // A broken program with the same settings: its errors, and no CODAL again.
-  const broken = await compile({ 'main.cpp': 'int main() { oops; }\n', 'codal.json': ble });
+  const broken = await compile({ 'main.cpp': 'int main() { oops; }\n', 'codal.json': BLE });
   assert.equal(broken.ok, false);
   assert.ok(broken.steps.every((step) => step.codal === null));
 
-  const again = await compile({ 'main.cpp': PROGRAM, 'codal.json': ble });
+  const again = await compile({ 'main.cpp': PROGRAM, 'codal.json': BLE });
   assert.ok(again.steps.every((step) => step.codal === null), 'kept from the first build');
   assert.equal(again.hex, first.hex);
 
@@ -233,6 +271,28 @@ test('other settings compile CODAL once, before the program\'s own files, then r
   const prebuilt = await compile({ 'main.cpp': PROGRAM });
   assert.ok(prebuilt.steps.every((step) => step.codal === null));
   assert.equal(prebuilt.hex, reference.hex, 'the prebuilt archives are back');
+});
+
+// Placed after the test above to reuse the CODAL it compiled for BLE.
+test('the debug information names sources under the prefixes given, CODAL prebuilt or compiled here', async () => {
+  const { project, codal } = await sourcePrefixes();
+  const sourceOf = async (elf, symbol) => {
+    const line = (await inspect(['llvm-nm', '-C', ELF], elf)).split('\n').find((entry) => entry.endsWith(` ${symbol}`));
+    assert.ok(line, `${symbol} is not in the ELF`);
+    const [, at] = (await inspect(['llvm-symbolizer', `--obj=${ELF}`, `0x${line.split(' ')[0]}`], elf)).split('\n');
+    return at.replace(/:\d+:\d+$/, '');
+  };
+  const used = new Set();
+  for (const files of [{ 'main.cpp': PROGRAM }, { 'main.cpp': PROGRAM, 'codal.json': BLE }]) {
+    const { ok, output, elf } = await compile(files, { optimisation: '-O0' });
+    assert.equal(ok, true, output);
+    assert.equal(await sourceOf(elf, 'main'), `${project}main.cpp`);
+    const init = await sourceOf(elf, 'codal::MicroBit::init()');
+    const prefix = codal.find((candidate) => init.startsWith(candidate));
+    assert.equal(init.slice(prefix?.length), 'codal-microbit-v2/model/MicroBit.cpp', init);
+    used.add(prefix);
+  }
+  assert.equal(used.size, 2, 'the prebuilt archives and CODAL compiled here name CODAL differently');
 });
 
 test('declares the toolchain and CODAL versions it was built with', async () => {
