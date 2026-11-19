@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.305.0-alpha.6 - Unreleased
+## 0.305.0-alpha.6 - 2026/11/19
 
 - `compile()` also returns `elf`: the linked program the hex was made from, with its debug
   information, for a debugger. `null` when a step fails.
